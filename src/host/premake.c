@@ -188,6 +188,24 @@ int process_option(lua_State* L, const char* arg)
 	return OKAY;
 }
 
+static int traceback (lua_State *L) {
+  if (!lua_isstring(L, 1))  /* 'message' not a string? */
+    return 1;  /* keep it intact */
+  lua_getfield(L, LUA_GLOBALSINDEX, "debug");
+  if (!lua_istable(L, -1)) {
+    lua_pop(L, 1);
+    return 1;
+  }
+  lua_getfield(L, -1, "traceback");
+  if (!lua_isfunction(L, -1)) {
+    lua_pop(L, 2);
+    return 1;
+  }
+  lua_pushvalue(L, 1);  /* pass error message */
+  lua_pushinteger(L, 2);  /* skip this function and traceback */
+  lua_call(L, 2, 1);  /* call debug.traceback */
+  return 1;
+}
 
 
 #if defined(_DEBUG)
@@ -226,9 +244,10 @@ int load_builtin_scripts(lua_State* L)
 	}
 
 	/* hand off control to the scripts */
+    lua_pushcfunction(L, &traceback);
 	lua_getglobal(L, "_premake_main");
 	lua_pushstring(L, scripts_path);
-	if (lua_pcall(L, 1, 1, 0) != OKAY)
+	if (lua_pcall(L, 1, 1, lua_gettop(L) - 2) != OKAY)
 	{
 		printf(ERROR_MESSAGE, lua_tostring(L, -1));
 		return !OKAY;
@@ -260,8 +279,9 @@ int load_builtin_scripts(lua_State* L)
 	}
 
 	/* hand off control to the scripts */
+    lua_pushcfunction(L, &traceback);
 	lua_getglobal(L, "_premake_main");
-	if (lua_pcall(L, 0, 1, 0) != OKAY)
+	if (lua_pcall(L, 0, 1, lua_gettop(L) - 1) != OKAY)
 	{
 		printf(ERROR_MESSAGE, lua_tostring(L,-1));
 		return !OKAY;
