@@ -45,6 +45,126 @@
 		end
 	end
 
+  local function external_tool(cfg)
+		if #cfg.includedirs > 0 then
+			_p('\t\t\t\tAdditionalIncludeDirectories="%s"', premake.esc(path.translate(table.concat(cfg.includedirs, ";"), '\\')))
+		end
+		
+		if #cfg.defines > 0 then
+			_p('\t\t\t\tPreprocessorDefinitions="%s"', premake.esc(table.concat(cfg.defines, ";")))
+		end
+
+    local buildoptions = {}
+    local function add_flag(f) table.insert(buildoptions, f) end
+
+    -- Optimization
+    if cfg.flags.Optimize then
+      add_flag("/Ox")
+    elseif cfg.flags.OptimizeSpeed then
+      add_flag("/O2")
+    elseif cfg.flags.OptimizeSize then
+      add_flag("/Os")
+    end
+		
+    -- Minimal rebuild
+		if cfg.flags.Symbols and not cfg.flags.Managed then
+      add_flag("/Gm")
+		end
+		
+    -- Exceptions
+		if not cfg.flags.NoExceptions then
+      add_flag("/EHsc")
+		elseif cfg.flags.SEH and _ACTION > "vs2003" then
+      add_flag("/EHa")
+		end
+		
+    -- Runtime checks
+		if _VS.optimization(cfg) == 0 and not cfg.flags.Managed then
+      add_flag("/RTC1")
+		end
+
+    -- String pooling
+		if _VS.optimization(cfg) ~= 0 then
+      add_flag("/GF")
+		end
+
+    -- Rintime library
+		local debugbuild = (_VS.optimization(cfg) == 0)
+		if cfg.flags.StaticRuntime then
+			add_flag(debugbuild and "/MTd" or "/MT")
+		else
+      add_flag(debugbuild and "/MDd" or "/MD")
+		end
+
+    -- Function level linking
+    add_flag("/Gy")
+
+    -- Float model
+    if cfg.flags.FloatFast then
+      add_flag("/fp:fast")
+    elseif cfg.flags.FloatStrict then
+      add_flag("/fp:strict")
+    end
+
+    -- RTTI
+    add_flag(cfg.flags.NoRTTI and "/GR-" or "/GR")
+
+    -- Native WChar
+		if cfg.flags.NativeWChar then
+      add_flag("/ZC:wchar_t")
+		elseif cfg.flags.NoNativeWChar then
+      add_flag("/ZC:wchar_t-")
+		end
+
+    -- Precompiled headers
+    if not cfg.flags.NoPCH and cfg.pchheader then
+      add_flag("/Yu" .. cfg.pchheader)
+    end
+
+    -- Warnings
+    add_flag(cfg.flags.ExtraWarnings and "/W4" or "/W3")
+		
+		if cfg.flags.FatalWarnings then
+      add_flag("/WX")
+		end
+		
+    -- Detect 64-bit portability issues
+		if _ACTION < "vs2008" and not cfg.flags.Managed and not cfg.flags.No64BitChecks then
+      add_flag("/Wp64")
+		end
+
+    -- Debug information format
+    local dif = premake.vs200x_vcproj_symbols(cfg)
+    if dif == 3 then
+      add_flag("/Zi") -- No edit and continue
+    elseif dif == 4 then
+      add_flag("/ZI") -- With edit and continue
+    end
+
+    buildoptions = table.join(buildoptions, cfg.buildoptions)
+
+    _p('\t\t\t\tCompilerAdditionalOptions="%s"', table.concat(premake.esc(buildoptions), " "))
+		
+
+  end
+
+-- 
+-- MOC block for Windows platform
+--
+
+  function premake.vs200x_vcproj_MOC(cfg)
+    _p('\t\t\t<Tool')
+    _p('\t\t\t\tName="MOC"')
+    external_tool(cfg)
+    _p('\t\t\t\/>')
+  end
+
+  function premake.vs200x_vcproj_QRC(cfg)
+    _p('\t\t\t<Tool')
+    _p('\t\t\t\tName="QRC"')
+    external_tool(cfg)
+    _p('\t\t\t\/>')
+  end
 
 --
 -- Compiler block for Windows and XBox360 platforms.
@@ -376,6 +496,8 @@
 
 	local blockmap = 
 	{
+    MOC                    = premake.vs200x_vcproj_QRC,
+    QRC                    = premake.vs200x_vcproj_MOC,
 		VCCLCompilerTool       = premake.vs200x_vcproj_VCCLCompilerTool,
 		VCCLCompilerTool_GCC   = premake.vs200x_vcproj_VCCLCompilerTool_GCC,
 		VCLinkerTool           = premake.vs200x_vcproj_VCLinkerTool,
@@ -466,7 +588,10 @@
 		else
 			return {	
 				"VCPreBuildEventTool",
+        "QRC",
+        "MOC",
 				"VCCustomBuildTool",
+        "UIC",
 				"VCXMLDataGeneratorTool",
 				"VCWebServiceProxyGeneratorTool",
 				"VCMIDLTool",
@@ -522,6 +647,11 @@
 
 		if _ACTION > "vs2003" then
 			_p('\t<ToolFiles>')
+      _p('\t\t<ToolFile')
+      local rulesfile = premake.project.getfilename(prj.solution, "%%.rules")
+      local relpath = path.getrelative(prj.location, rulesfile)
+      _p('\t\t\tRelativePath="%s"', premake.esc(relpath))
+      _p('\t\t/>')
 			_p('\t</ToolFiles>')
 		end
 
@@ -593,5 +723,138 @@
 		_p('</VisualStudioProject>')
 	end
 
+--
+-- Write the rules file
+-- At the moment this supports Qt moc, uic, and qrc
+--
+	function premake.vs200x_vc_rules(prj)
+		io.eol = "\r\n"
+		_p('<?xml version="1.0" encoding="Windows-1252"?>')
+
+		-- Write opening project block
+		_p('<VisualStudioToolFile')
+		_p('\tName="%s"', premake.esc(prj.name .. " Rules"))
+		if _ACTION == "vs2002" then
+			_p('\tVersion="7.00"')
+		elseif _ACTION == "vs2003" then
+			_p('\tVersion="7.10"')
+		elseif _ACTION == "vs2005" then
+			_p('\tVersion="8.00"')
+		elseif _ACTION == "vs2008" then
+			_p('\tVersion="9.00"')
+		end
+    _p('\t>')
+    _p('\t<Rules>')
+
+    local function add_properties()
+      _p('\t\t\t\t<StringProperty')
+      _p('\t\t\t\t\tName="AdditionalIncludeDirectories"')
+      _p('\t\t\t\t\tDisplayName="Additional Include Directories"')
+      _p('\t\t\t\t\tCategory="General"')
+      _p('\t\t\t\t\tSwitch="-I[value]"')
+      _p('\t\t\t\t\tDelimited="true"')
+      _p('\t\t\t\t\tInheritable="true"')
+      _p('\t\t\t\t/>')
+
+      _p('\t\t\t\t<StringProperty')
+      _p('\t\t\t\t\tName="PreprocessorDefinitions"')
+      _p('\t\t\t\t\tDisplayName="Preprocessor Definitions"')
+      _p('\t\t\t\t\tCategory="General"')
+      _p('\t\t\t\t\tSwitch="-D[value]"')
+      _p('\t\t\t\t\tDelimited="true"')
+      _p('\t\t\t\t\tInheritable="true"')
+      _p('\t\t\t\t/>')
+
+      _p('\t\t\t\t<StringProperty')
+      _p('\t\t\t\t\tName="CompilerAdditionalOptions"')
+      _p('\t\t\t\t\tDisplayName="Compiler Command Line Options"')
+      _p('\t\t\t\t\tCategory="General"')
+      _p('\t\t\t\t\tSwitch="[value]"')
+      _p('\t\t\t\t/>')
+    end
+
+    local uic = {
+      '%QTDIR%\\bin\\uic.exe',
+      '[inputs]',
+      '-o "ui_$(InputName).h"',
+    }
+
+    _p('\t\t<CustomBuildRule')
+    _p('\t\t\tName="UIC"')
+    _p('\t\t\tDisplayName="Qt UI"')
+    _p('\t\t\tCommandLine="%s"', premake.esc(table.concat(uic, " "))) 
+    _p('\t\t\tOutputs="%s"', "ui_$(InputName).h")
+    _p('\t\t\tFileExtensions="*.ui"')
+    _p('\t\t\tExecutionDescription="$(InputName).ui"')
+    _p('\t\t\t>')
+		_p('\t\t\t<Properties>')
+    _p('\t\t\t</Properties>')
+    _p('\t\t</CustomBuildRule>')
+
+    local qrc = {
+      '%QTDIR%\\bin\\rcc.exe',
+      '[inputs]',
+      '-o $(IntDir)\\$(InputName)_qrc.cpp',
+      '&&',
+      
+      'cl.exe',
+      '$(IntDir)\\$(InputName)_qrc.cpp',
+      '[AdditionalIncludeDirectories]',
+      '[PreprocessorDefinitions]',
+      '[CompilerAdditionalOptions]',
+      '/nologo',
+      '/c',
+      '/Fo"$(IntDir)\\$(InputName)_qrc.obj"',
+    }
+
+    _p('\t\t<CustomBuildRule')
+    _p('\t\t\tName="QRC"')
+    _p('\t\t\tDisplayName="Qt Resource"')
+    _p('\t\t\tCommandLine="%s"', premake.esc(table.concat(qrc, " ")))
+    _p('\t\t\tOutputs="$(IntDir)\\$(InputName)_qrc.obj"')
+    _p('\t\t\tFileExtensions="*.qrc"')
+    _p('\t\t\tExecutionDescription="$(InputName).qrc"')
+    _p('\t\t\t>')
+    _p('\t\t\t<Properties>')
+    add_properties()
+    _p('\t\t\t</Properties>')
+    _p('\t\t</CustomBuildRule>')
+
+    local moc = {
+      '%QTDIR%\\bin\\moc.exe',
+      '[AdditionalIncludeDirectories]',
+      '[PreprocessorDefinitions]',
+      '-D_MSC_VER=1500',
+      '-D_WIN32',
+      '[Inputs]',
+      '-o "$(IntDir)\\$(InputName)_moc.cpp"',
+      '&&',
+
+      'cl.exe',
+      '$(IntDir)\\$(InputName)_moc.cpp',
+      '[AdditionalIncludeDirectories]',
+      '[PreprocessorDefinitions]',
+      '[CompilerAdditionalOptions]',
+      '/nologo',
+      '/c',
+      '/Fo"$(IntDir)\\$(InputName)_moc.obj"',
+    }
+
+    _p('\t\t<CustomBuildRule')
+    _p('\t\t\tName="MOC"')
+    _p('\t\t\tDisplayName="Qt Meta Object"')
+    _p('\t\t\tCommandLine="%s"', premake.esc(table.concat(moc, " ")))
+    _p('\t\t\tOutputs="$(IntDir)\\$(InputName)_moc.obj"')
+    _p('\t\t\tFileExtensions="*.hxx"')
+    _p('\t\t\tExecutionDescription="$(InputName).hxx"')
+    _p('\t\t\t>')
+    _p('\t\t\t<Properties>')
+    add_properties()
+    _p('\t\t\t</Properties>')
+    _p('\t\t</CustomBuildRule>')
+
+    _p('\t</Rules>')
+    _p('</VisualStudioToolFile>')
+  end
 
 

@@ -389,6 +389,7 @@
 
 		onsolution = function(sln)
 			premake.generate(sln, "%%.sln", premake.vs2005_solution)
+      premake.generate(sln, "%%.rules", premake.vs200x_vc_rules)
 		end,
 		
 		onproject = function(prj)
@@ -422,6 +423,7 @@
 
 		onsolution = function(sln)
 			premake.generate(sln, "%%.sln", premake.vs2005_solution)
+      premake.generate(sln, "%%.rules", premake.vs200x_vc_rules)
 		end,
 		
 		onproject = function(prj)
