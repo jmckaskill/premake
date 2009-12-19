@@ -91,12 +91,12 @@
 		local newcwd = path.getdirectory(fname)
 		os.chdir(newcwd)
 		
-		-- run the chunk. How can I catch variable return values?
-		local a, b, c, d, e, f = builtin_dofile(fname)
+		-- run the chunk
+		local ret = {builtin_dofile(fname)}
 		
 		-- restore the previous working directory when done
 		os.chdir(oldcwd)
-		return a, b, c, d, e, f
+		return unpack(ret)
 	end
 
 
