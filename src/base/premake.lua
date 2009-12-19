@@ -21,6 +21,40 @@
 
 	function premake.generate(obj, filename, callback)
 		filename = premake.project.getfilename(obj, filename)
+    tmpfilename = filename .. ".tmp"
+		printf("Generating %s...", filename)
+
+		local f, err = io.open(tmpfilename, "wb")
+		if (not f) then
+			error(err, 0)
+		end
+
+		io.output(f)
+		callback(obj)
+		f:close()
+    if os.isfile(filename) then
+      local function slurp(name)
+        local f = io.open(name, "rb")
+        local ret = f:read("*a")
+        f:close()
+        return ret
+      end
+      local old = slurp(filename)
+      local new = slurp(tmpfilename)
+      if old ~= new then
+        os.remove(filename)
+        os.rename(tmpfilename, filename)
+      else
+        os.remove(tmpfilename)
+      end
+    else
+      os.rename(tmpfilename, filename)
+    end
+	end
+
+  --[[
+	function premake.generate(obj, filename, callback)
+		filename = premake.project.getfilename(obj, filename)
 		printf("Generating %s...", filename)
 
 		local f, err = io.open(filename, "wb")
@@ -32,3 +66,4 @@
 		callback(obj)
 		f:close()
 	end
+  --]]
