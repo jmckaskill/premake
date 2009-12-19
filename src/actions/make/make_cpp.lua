@@ -24,6 +24,8 @@
 		for _, file in ipairs(prj.files) do
 			if path.iscppfile(file) then
 				_p('\t$(OBJDIR)/%s.o \\', _MAKE.esc(path.getbasename(file)))
+            elseif (path.getextension(file) == ".hxx") then
+                _p('\t$(OBJDIR)/%s_moc.o \\', _MAKE.esc(path.getbasename(file)))
 			end
 		end
 		_p('')
@@ -126,6 +128,13 @@
 				_p('$(OBJDIR)/%s.res: %s', _MAKE.esc(path.getbasename(file)), _MAKE.esc(file))
 				_p('\t@echo $(notdir $<)')
 				_p('\t$(SILENT) windres $< -O coff -o $@ $(RESFLAGS)')
+            elseif (path.getextension(file) == ".hxx") then
+                _p('$(OBJDIR)/%s_moc.cpp: %s', _MAKE.esc(path.getbasename(file)), _MAKE.esc(file))
+				_p('\t@echo $(notdir $<)')
+                _p('\t$(SILENT) $(MOC) $(MOCFLAGS) -o $@ $<')
+				_p('$(OBJDIR)/%s_moc.o: $(OBJDIR)/%s_moc.cpp', _MAKE.esc(path.getbasename(file)), _MAKE.esc(path.getbasename(file)))
+				_p('\t@echo $(notdir $<)')
+                _p('\t$(SILENT) $(CXX) $(CXXFLAGS) -o $@ -c $<')
 			end
 		end
 		_p('')
@@ -168,6 +177,11 @@
 		_p('  AR = %s', cc.ar)
 		_p('endif')
 		_p('')
+
+        _p('ifndef MOC')
+        _p('  MOC = %s', cc.moc)
+        _p('endif')
+        _p('')
 	end
 	
 	
@@ -190,6 +204,9 @@
 		if platform.ar then
 			_p('  AR         = %s', platform.ar)
 		end
+        if platform.moc then
+            _p('  MOC        = %s', platform.moc)
+        end
 
 		_p('  OBJDIR     = %s', _MAKE.esc(cfg.objectsdir))		
 		_p('  TARGETDIR  = %s', _MAKE.esc(cfg.buildtarget.directory))
@@ -211,6 +228,7 @@
 		_p('  LIBS      += %s', table.concat(cc.getlinkflags(cfg), " "))
 		_p('  RESFLAGS  += $(DEFINES) $(INCLUDES) %s', table.concat(table.join(cc.getdefines(cfg.resdefines), cc.getincludedirs(cfg.resincludedirs), cfg.resoptions), " "))
 		_p('  LDDEPS    += %s', table.concat(_MAKE.esc(premake.getlinks(cfg, "siblings", "fullpath")), " "))
+        _p('  MOCFLAGS  += $(DEFINES) $(INCLUDES)')
 		
 		if cfg.kind == "StaticLib" then
 			if cfg.platform:startswith("Universal") then
