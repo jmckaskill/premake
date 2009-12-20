@@ -3,7 +3,6 @@
 -- Generate a Code::Blocks workspace.
 -- Copyright (c) 2009 Jason Perkins and the Premake project
 --
-  require 'show'
 
   function premake.qtcreator_creator(sln)
   end
